@@ -1,192 +1,603 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Vehicle Damage Detector</title>
-    <style>
-        * {
-            box-sizing: border-box;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Vehicle Damage Detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden;
-        }
+:root{
+  --bg-a:#050c18;
+  --bg-b:#0c1628;
+  --bg-c:#160820;
+  --glass-bg:rgba(255,255,255,0.04);
+  --glass-border:rgba(255,255,255,0.09);
+  --glass-shadow:0 32px 80px rgba(0,0,0,0.6);
+  --text:#eef2ff;
+  --text-dim:rgba(238,242,255,0.45);
+  --text-dimmer:rgba(238,242,255,0.25);
+  --blue:#3b82f6;
+  --blue-glow:rgba(59,130,246,0.3);
+  --green:#22c55e;
+  --green-glow:rgba(34,197,94,0.25);
+  --red:#ef4444;
+  --red-glow:rgba(239,68,68,0.25);
+  --crimson:#8b1a1a;
+  --accent-line:rgba(59,130,246,0.5);
+}
 
-        body {
-            position: relative;
-            background: linear-gradient(45deg, #2ecc71, #e74c3c);
-            background-size: 400% 400%;
-            animation: gradientAnimation 10s ease infinite;
-        }
+html,body{height:100%;font-family:'Sora',sans-serif;background:var(--bg-a);color:var(--text);overflow-x:hidden}
 
-        @keyframes gradientAnimation {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
+/* ── BACKGROUND ── */
+.bg{
+  position:fixed;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 20%,rgba(15,40,80,0.7) 0%,transparent 60%),
+    radial-gradient(ellipse 60% 50% at 85% 80%,rgba(80,10,20,0.5) 0%,transparent 55%),
+    radial-gradient(ellipse 50% 70% at 50% 50%,rgba(8,18,45,0.9) 0%,transparent 80%),
+    linear-gradient(135deg,var(--bg-a) 0%,var(--bg-b) 40%,var(--bg-c) 100%);
+}
 
-        .background-effects {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 0;
-        }
+/* particles canvas */
+#canvas{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0.6}
 
-        .crash-shape {
-            position: absolute;
-            top: 40%;
-            left: 50%;
-            width: 200px;
-            height: 200px;
-            background-color: rgba(255, 0, 0, 0.3);
-            border-radius: 50%;
-            transform: translate(-50%, -50%) rotate(45deg);
-            box-shadow: 0 0 50px rgba(255, 0, 0, 0.7);
-        }
+/* ── PAGE ── */
+.page{
+  position:relative;z-index:10;
+  min-height:100vh;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:32px 16px;
+}
 
-        .line {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 150%;
-            height: 3px;
-            background-color: rgba(255, 255, 255, 0.2);
-            transform-origin: center;
-            transform: translate(-50%, -50%) rotate(45deg);
-            box-shadow: 0 0 15px rgba(255, 0, 0, 0.3);
-        }
+/* ── CARD ── */
+.card{
+  width:100%;max-width:520px;
+  background:var(--glass-bg);
+  border:1px solid var(--glass-border);
+  border-radius:24px;
+  padding:44px 40px;
+  box-shadow:var(--glass-shadow);
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
+  position:relative;
+  overflow:hidden;
+  animation:cardIn 0.7s cubic-bezier(0.16,1,0.3,1) both;
+}
 
-        .line:nth-child(2) {
-            transform: translate(-50%, -50%) rotate(135deg);
-        }
+@keyframes cardIn{
+  from{opacity:0;transform:translateY(28px) scale(0.97)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
 
-        .container {
-            position: relative;
-            z-index: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
+/* card shimmer edge */
+.card::before{
+  content:'';position:absolute;
+  inset:0;border-radius:24px;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,0.06) 0%,transparent 50%,rgba(59,130,246,0.04) 100%);
+}
 
-        .content {
-            background-color: rgba(0, 0, 0, 0.75);
-            padding: 40px;
-            border-radius: 20px;
-            text-align: center;
-            color: #fff;
-            width: 90%;
-            max-width: 500px;
-            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.8);
-        }
+/* inner glow top */
+.card::after{
+  content:'';position:absolute;
+  top:-1px;left:20%;right:20%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(100,160,255,0.6),transparent);
+}
 
-        h2 {
-            font-size: 30px;
-            color: #ffc107;
-            margin-bottom: 25px;
-            letter-spacing: 1px;
-            text-shadow: 1px 1px 3px black;
-        }
+/* ── HEADER ── */
+.header{text-align:center;margin-bottom:36px;animation:fadeUp 0.6s 0.15s ease both}
 
-        .file-upload {
-            margin: 15px 0;
-            position: relative;
-            display: inline-block;
-        }
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 
-        .file-upload input[type="file"] {
-            display: none;
-        }
+.badge{
+  display:inline-flex;align-items:center;gap:7px;
+  background:rgba(59,130,246,0.1);
+  border:1px solid rgba(59,130,246,0.25);
+  border-radius:100px;
+  padding:5px 14px 5px 10px;
+  font-size:11px;font-weight:500;letter-spacing:0.5px;
+  color:rgba(147,197,253,0.9);
+  margin-bottom:20px;
+}
 
-        .file-upload label {
-            background-color: #3498db;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: 0.3s ease;
-        }
+.badge-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--blue);box-shadow:0 0 8px var(--blue);
+  animation:blink 2s ease infinite;
+}
 
-        .file-upload label:hover {
-            background-color: #2980b9;
-        }
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
 
-        input[type="submit"] {
-            background-color: #e67e22;
-            border: none;
-            color: white;
-            padding: 12px 30px;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 15px;
-            transition: background-color 0.3s ease;
-        }
+.scan-icon{
+  width:64px;height:64px;
+  margin:0 auto 16px;
+  position:relative;
+  display:flex;align-items:center;justify-content:center;
+}
 
-        input[type="submit"]:hover {
-            background-color: #d35400;
-        }
+.scan-icon svg{width:36px;height:36px;opacity:0.9}
 
-        .result {
-            margin-top: 30px;
-            font-size: 24px;
-            font-weight: bold;
-            padding: 10px;
-            border-radius: 6px;
-            animation: fadeIn 1s ease;
-        }
+.scan-ring{
+  position:absolute;inset:0;border-radius:50%;
+  border:1.5px solid rgba(59,130,246,0.3);
+  animation:ringPulse 3s ease infinite;
+}
 
-        .accidental {
-            color: #ff4d4d;
-        }
+.scan-ring:nth-child(2){
+  inset:-10px;border-color:rgba(59,130,246,0.15);
+  animation-delay:0.8s;
+}
 
-        .non-accidental {
-            color: #00ff7f;
-        }
+@keyframes ringPulse{
+  0%,100%{opacity:0.6;transform:scale(1)}
+  50%{opacity:0.2;transform:scale(1.08)}
+}
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
-        }
-    </style>
+h1{
+  font-size:26px;font-weight:700;letter-spacing:-0.5px;
+  line-height:1.2;margin-bottom:10px;
+  background:linear-gradient(135deg,#eef2ff 30%,rgba(147,197,253,0.8) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+
+.subtitle{font-size:13px;color:var(--text-dim);font-weight:400;line-height:1.6}
+
+/* ── UPLOAD ZONE ── */
+.upload-zone{
+  border:1.5px dashed rgba(255,255,255,0.14);
+  border-radius:16px;
+  padding:32px 20px;
+  text-align:center;
+  cursor:pointer;
+  transition:border-color 0.25s,background 0.25s,transform 0.2s;
+  background:rgba(255,255,255,0.02);
+  position:relative;
+  margin-bottom:16px;
+  animation:fadeUp 0.6s 0.25s ease both;
+}
+
+.upload-zone:hover{
+  border-color:rgba(59,130,246,0.5);
+  background:rgba(59,130,246,0.05);
+  transform:translateY(-1px);
+}
+
+.upload-zone.drag-over{
+  border-color:var(--blue);
+  background:rgba(59,130,246,0.08);
+  transform:scale(1.01);
+}
+
+#file-input{display:none}
+
+.upload-icon{
+  width:52px;height:52px;
+  background:rgba(59,130,246,0.1);
+  border:1px solid rgba(59,130,246,0.2);
+  border-radius:14px;
+  display:flex;align-items:center;justify-content:center;
+  margin:0 auto 14px;
+  font-size:22px;
+  transition:background 0.2s,transform 0.2s;
+}
+
+.upload-zone:hover .upload-icon{background:rgba(59,130,246,0.18);transform:scale(1.05)}
+
+.upload-title{font-size:14px;font-weight:600;margin-bottom:5px}
+
+.upload-sub{font-size:12px;color:var(--text-dim);line-height:1.6}
+
+/* ── PREVIEW ── */
+.preview-wrap{
+  display:none;
+  border-radius:14px;overflow:hidden;
+  border:1px solid var(--glass-border);
+  margin-bottom:16px;
+  position:relative;
+  animation:fadeUp 0.3s ease;
+}
+
+.preview-wrap img{width:100%;height:200px;object-fit:cover;display:block}
+
+.preview-overlay{
+  position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(5,12,24,0.85) 0%,transparent 50%);
+}
+
+.preview-meta{
+  position:absolute;bottom:0;left:0;right:0;
+  padding:12px 16px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+
+.preview-filename{
+  font-size:12px;color:rgba(238,242,255,0.7);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;
+}
+
+.preview-change{
+  background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);
+  border-radius:6px;color:var(--text);font-family:'Sora',sans-serif;
+  font-size:11px;padding:4px 10px;cursor:pointer;
+  transition:background 0.2s;
+}
+
+.preview-change:hover{background:rgba(255,255,255,0.18)}
+
+/* ── BUTTON ── */
+.btn{
+  width:100%;padding:15px;
+  border:none;border-radius:12px;
+  font-family:'Sora',sans-serif;font-size:14px;font-weight:600;
+  cursor:pointer;letter-spacing:0.2px;
+  background:linear-gradient(135deg,#1d4ed8 0%,#2563eb 50%,#1e40af 100%);
+  color:#fff;
+  box-shadow:0 0 0 0 var(--blue-glow),0 4px 20px rgba(29,78,216,0.4);
+  transition:box-shadow 0.25s,transform 0.15s,opacity 0.2s;
+  position:relative;overflow:hidden;
+  animation:fadeUp 0.6s 0.35s ease both;
+}
+
+.btn::before{
+  content:'';position:absolute;
+  top:0;left:-100%;width:60%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,0.12),transparent);
+  transition:left 0.5s ease;
+}
+
+.btn:hover{
+  box-shadow:0 0 24px var(--blue-glow),0 8px 32px rgba(29,78,216,0.5);
+  transform:translateY(-1px);
+}
+
+.btn:hover::before{left:160%}
+.btn:active{transform:scale(0.99)}
+.btn.loading{opacity:0.7;pointer-events:none}
+
+/* ── SCAN BAR ── */
+.scan-bar-wrap{
+  display:none;margin-top:16px;
+  animation:fadeUp 0.3s ease;
+}
+
+.scan-bar-label{
+  display:flex;justify-content:space-between;
+  font-size:11px;color:var(--text-dim);margin-bottom:8px;
+}
+
+.scan-track{
+  height:3px;background:rgba(255,255,255,0.06);
+  border-radius:2px;overflow:hidden;
+}
+
+.scan-fill{
+  height:100%;width:0%;
+  background:linear-gradient(90deg,var(--blue),#60a5fa);
+  box-shadow:0 0 10px var(--blue);
+  border-radius:2px;
+  transition:width 0.1s linear;
+}
+
+/* ── RESULT ── */
+.result-wrap{
+  display:none;margin-top:20px;
+  animation:resultIn 0.5s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+@keyframes resultIn{
+  from{opacity:0;transform:translateY(12px) scale(0.97)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+
+.result-card{
+  border-radius:14px;padding:20px 22px;
+  display:flex;align-items:center;gap:18px;
+}
+
+.result-card.damaged{
+  background:rgba(239,68,68,0.08);
+  border:1px solid rgba(239,68,68,0.25);
+  box-shadow:0 0 40px rgba(239,68,68,0.12);
+}
+
+.result-card.safe{
+  background:rgba(34,197,94,0.07);
+  border:1px solid rgba(34,197,94,0.25);
+  box-shadow:0 0 40px rgba(34,197,94,0.1);
+}
+
+.result-icon-wrap{
+  width:52px;height:52px;flex-shrink:0;
+  border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:24px;
+}
+
+.damaged .result-icon-wrap{background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.25)}
+.safe .result-icon-wrap{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.25)}
+
+.result-label{
+  font-size:10px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:4px;
+}
+
+.damaged .result-label{color:var(--red)}
+.safe .result-label{color:var(--green)}
+
+.result-verdict{font-size:20px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px}
+.result-note{font-size:12px;color:var(--text-dim);line-height:1.5}
+
+/* ── DIVIDER ── */
+.divider{height:1px;background:var(--glass-border);margin:28px 0}
+
+/* ── FOOTER ── */
+.footer-note{
+  text-align:center;font-size:11px;color:var(--text-dimmer);
+  margin-top:28px;line-height:1.7;
+  animation:fadeUp 0.6s 0.5s ease both;
+}
+
+/* ── MOBILE ── */
+@media(max-width:480px){
+  .card{padding:28px 20px}
+  h1{font-size:22px}
+}
+</style>
 </head>
 <body>
 
-    <!-- Background effects -->
-    <div class="background-effects">
-        <div class="crash-shape"></div>
-        <div class="line"></div>
-        <div class="line"></div>
+<div class="bg"></div>
+<canvas id="canvas"></canvas>
+
+<div class="page">
+  <div class="card">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="badge">
+        <span class="badge-dot"></span>
+        AI-Powered Analysis
+      </div>
+
+      <div class="scan-icon">
+        <div class="scan-ring"></div>
+        <div class="scan-ring"></div>
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 7.5C3 5.01 3 3.765 3.805 2.882C4.61 2 5.907 2 8.5 2H9M3 16.5C3 18.99 3 20.235 3.805 21.118C4.61 22 5.907 22 8.5 22H9M21 7.5C21 5.01 21 3.765 20.195 2.882C19.39 2 18.093 2 15.5 2H15M21 16.5C21 18.99 21 20.235 20.195 21.118C19.39 22 18.093 22 15.5 22H15" stroke="rgba(147,197,253,0.9)" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="12" cy="12" r="3" stroke="rgba(147,197,253,0.9)" stroke-width="1.5"/>
+          <path d="M12 7V9M12 15V17M17 12H15M9 12H7" stroke="rgba(147,197,253,0.6)" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <h1>AI Vehicle Damage Detector</h1>
+      <p class="subtitle">Upload a vehicle image to detect accident damage instantly using advanced computer vision.</p>
     </div>
 
-    <!-- Form container -->
-    <div class="container">
-        <div class="content">
-            <h2>🚗 Vehicle Damage Detector</h2>
-            <form method="POST" enctype="multipart/form-data">
-                <div class="file-upload">
-                    <label for="file">📁 Choose Vehicle Image</label>
-                    <input type="file" name="file" id="file" required>
-                </div><br>
-                <input type="submit" value="🔍 Predict Damage">
-            </form>
+    <!-- Form -->
+    <form method="POST" enctype="multipart/form-data" id="form">
 
-            {% if prediction %}
-                <div class="result {{ 'accidental' if prediction == 'Accidental' else 'non-accidental' }}">
-                    Result: {{ prediction }}
-                </div>
-            {% endif %}
+      <!-- Drop zone -->
+      <div class="upload-zone" id="dropZone">
+        <input type="file" name="file" id="file-input" accept="image/*" required>
+        <div class="upload-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M12 16V8M12 8L9 11M12 8L15 11" stroke="rgba(147,197,253,0.9)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M3 15C3 17.828 3 19.243 3.879 20.121C4.757 21 6.172 21 9 21H15C17.828 21 19.243 21 20.121 20.121C21 19.243 21 17.828 21 15" stroke="rgba(147,197,253,0.6)" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
         </div>
+        <div class="upload-title">Drop image here or click to upload</div>
+        <div class="upload-sub">JPG, PNG, WEBP supported · Max 10 MB</div>
+      </div>
+
+      <!-- Preview -->
+      <div class="preview-wrap" id="previewWrap">
+        <img id="previewImg" src="" alt="Vehicle preview">
+        <div class="preview-overlay"></div>
+        <div class="preview-meta">
+          <span class="preview-filename" id="previewName"></span>
+          <button type="button" class="preview-change" id="changeBtn">Change</button>
+        </div>
+      </div>
+
+      <!-- Analyze button -->
+      <button type="submit" class="btn" id="submitBtn">
+        Analyze Damage
+      </button>
+
+      <!-- Scan bar (loading) -->
+      <div class="scan-bar-wrap" id="scanBarWrap">
+        <div class="scan-bar-label">
+          <span id="scanLabel">Scanning vehicle...</span>
+          <span id="scanPct">0%</span>
+        </div>
+        <div class="scan-track">
+          <div class="scan-fill" id="scanFill"></div>
+        </div>
+      </div>
+
+    </form>
+
+    <!-- Result (Flask-injected or JS demo) -->
+    <div class="result-wrap" id="resultWrap">
+      <div class="divider"></div>
+      <div class="result-card" id="resultCard">
+        <div class="result-icon-wrap" id="resultIconWrap"></div>
+        <div>
+          <div class="result-label" id="resultLabel"></div>
+          <div class="result-verdict" id="resultVerdict"></div>
+          <div class="result-note" id="resultNote"></div>
+        </div>
+      </div>
     </div>
+
+    {% if prediction %}
+    <script>
+      window.__prediction = "{{ prediction }}";
+    </script>
+    {% endif %}
+
+  </div>
+
+  <p class="footer-note">
+    AI-assisted analysis only. Always confirm findings<br>with a certified automotive inspector.
+  </p>
+</div>
+
+<script>
+/* ── PARTICLES ── */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, particles = [];
+
+function resize() {
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+function mkParticle() {
+  return {
+    x: Math.random() * W,
+    y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: -Math.random() * 0.5 - 0.1,
+    r: Math.random() * 1.2 + 0.3,
+    alpha: Math.random() * 0.4 + 0.1,
+    life: 0,
+    maxLife: Math.random() * 300 + 200,
+  };
+}
+
+for (let i = 0; i < 80; i++) particles.push(mkParticle());
+
+function drawParticles() {
+  ctx.clearRect(0, 0, W, H);
+  particles.forEach((p, i) => {
+    p.x += p.vx; p.y += p.vy; p.life++;
+    const t = p.life / p.maxLife;
+    const a = p.alpha * (t < 0.1 ? t / 0.1 : t > 0.8 ? (1 - t) / 0.2 : 1);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(100,160,255,${a})`;
+    ctx.fill();
+    if (p.life >= p.maxLife) particles[i] = mkParticle();
+  });
+
+  // light streaks
+  particles.filter((_,i) => i % 12 === 0).forEach(p => {
+    const a = (p.alpha * 0.4) * (p.life / p.maxLife < 0.5 ? 1 : 0);
+    if (a < 0.01) return;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(p.x - p.vx * 25, p.y - p.vy * 25);
+    ctx.strokeStyle = `rgba(100,160,255,${a})`;
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  });
+
+  requestAnimationFrame(drawParticles);
+}
+drawParticles();
+
+/* ── FILE HANDLING ── */
+const fileInput  = document.getElementById('file-input');
+const dropZone   = document.getElementById('dropZone');
+const previewWrap= document.getElementById('previewWrap');
+const previewImg = document.getElementById('previewImg');
+const previewName= document.getElementById('previewName');
+const changeBtn  = document.getElementById('changeBtn');
+
+function loadFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  previewImg.src = URL.createObjectURL(file);
+  previewName.textContent = file.name;
+  dropZone.style.display = 'none';
+  previewWrap.style.display = 'block';
+}
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => loadFile(fileInput.files[0]));
+changeBtn.addEventListener('click', () => {
+  fileInput.value = '';
+  previewWrap.style.display = 'none';
+  dropZone.style.display = 'block';
+});
+
+['dragenter','dragover'].forEach(e =>
+  dropZone.addEventListener(e, ev => { ev.preventDefault(); dropZone.classList.add('drag-over'); })
+);
+['dragleave','dragend'].forEach(e =>
+  dropZone.addEventListener(e, () => dropZone.classList.remove('drag-over'))
+);
+dropZone.addEventListener('drop', ev => {
+  ev.preventDefault(); dropZone.classList.remove('drag-over');
+  const f = ev.dataTransfer.files[0];
+  if (f) { const dt = new DataTransfer(); dt.items.add(f); fileInput.files = dt.files; loadFile(f); }
+});
+
+/* ── FORM SUBMIT (scan animation) ── */
+const form       = document.getElementById('form');
+const submitBtn  = document.getElementById('submitBtn');
+const scanBarWrap= document.getElementById('scanBarWrap');
+const scanFill   = document.getElementById('scanFill');
+const scanLabel  = document.getElementById('scanLabel');
+const scanPct    = document.getElementById('scanPct');
+
+const labels = ['Initializing scan...','Detecting edges...','Analyzing damage zones...','Computing severity...','Finalizing results...'];
+let scanInterval;
+
+form.addEventListener('submit', () => {
+  submitBtn.textContent = 'Analyzing...';
+  submitBtn.classList.add('loading');
+  scanBarWrap.style.display = 'block';
+
+  let pct = 0; let li = 0;
+  scanInterval = setInterval(() => {
+    pct = Math.min(pct + Math.random() * 4 + 1, 95);
+    scanFill.style.width = pct + '%';
+    scanPct.textContent = Math.round(pct) + '%';
+    const idx = Math.min(Math.floor(pct / 20), labels.length - 1);
+    if (idx !== li) { li = idx; scanLabel.textContent = labels[li]; }
+    if (pct >= 95) clearInterval(scanInterval);
+  }, 120);
+});
+
+/* ── RESULT RENDERING ── */
+function showResult(prediction) {
+  const wrap    = document.getElementById('resultWrap');
+  const card    = document.getElementById('resultCard');
+  const iconWrap= document.getElementById('resultIconWrap');
+  const label   = document.getElementById('resultLabel');
+  const verdict = document.getElementById('resultVerdict');
+  const note    = document.getElementById('resultNote');
+
+  wrap.style.display = 'block';
+
+  if (prediction === 'Accidental') {
+    card.className = 'result-card damaged';
+    iconWrap.textContent = '⚠️';
+    label.textContent = 'Detection Result';
+    verdict.textContent = 'Damage Detected';
+    note.textContent = 'Collision-related damage patterns were identified. We recommend a professional assessment.';
+  } else {
+    card.className = 'result-card safe';
+    iconWrap.textContent = '🛡️';
+    label.textContent = 'Detection Result';
+    verdict.textContent = 'No Damage Found';
+    note.textContent = 'The vehicle appears to be in good condition. No significant damage signatures detected.';
+  }
+}
+
+// Flask injection
+if (window.__prediction) showResult(window.__prediction);
+
+// Demo via ?demo=Accidental or ?demo=Non-Accidental
+const demo = new URLSearchParams(location.search).get('demo');
+if (demo) showResult(demo);
+</script>
 
 </body>
 </html>

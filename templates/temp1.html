@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Damage Detector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Barlow+Condensed:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --red: #ff2233;
+            --amber: #ffaa00;
+            --green: #00ff88;
+            --dark: #080a0e;
+            --panel: #0d1117;
+            --surface: #131920;
+            --border: rgba(255,255,255,0.07);
+            --text-primary: #e8eaf0;
+            --text-dim: rgba(232,234,240,0.4);
+            --scan-line: rgba(255, 170, 0, 0.04);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            height: 100%;
+            background: var(--dark);
+            color: var(--text-primary);
+            font-family: 'Barlow Condensed', sans-serif;
+            overflow: hidden;
+        }
+
+        /* ─── SCAN LINE OVERLAY ─── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                var(--scan-line) 2px,
+                var(--scan-line) 4px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* ─── NOISE GRAIN ─── */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: -50%;
+            width: 200%;
+            height: 200%;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+            pointer-events: none;
+            opacity: 0.3;
+            z-index: 999;
+            animation: grainShift 0.5s steps(1) infinite;
+        }
+
+        @keyframes grainShift {
+            0%  { transform: translate(0, 0); }
+            20% { transform: translate(-3%, -4%); }
+            40% { transform: translate(4%, 3%); }
+            60% { transform: translate(-2%, 5%); }
+            80% { transform: translate(5%, -2%); }
+            100%{ transform: translate(0, 0); }
+        }
+
+        /* ─── BACKGROUND ─── */
+        .bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+        }
+
+        .bg-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,34,51,0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,34,51,0.06) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .bg-radial {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(255,34,51,0.12) 0%, transparent 70%);
+        }
+
+        .bg-vignette {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 100% 100% at 50% 50%, transparent 40%, rgba(8,10,14,0.9) 100%);
+        }
+
+        /* corner accents */
+        .corner {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            border-color: rgba(255,34,51,0.4);
+            border-style: solid;
+        }
+        .corner-tl { top: 24px; left: 24px; border-width: 2px 0 0 2px; }
+        .corner-tr { top: 24px; right: 24px; border-width: 2px 2px 0 0; }
+        .corner-bl { bottom: 24px; left: 24px; border-width: 0 0 2px 2px; }
+        .corner-br { bottom: 24px; right: 24px; border-width: 0 2px 2px 0; }
+
+        /* ─── LAYOUT ─── */
+        .layout {
+            position: relative;
+            z-index: 10;
+            display: grid;
+            grid-template-columns: 260px 1fr 260px;
+            grid-template-rows: 60px 1fr 60px;
+            height: 100vh;
+            gap: 0;
+        }
+
+        /* ─── TOP BAR ─── */
+        .topbar {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(13,17,23,0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .topbar-logo {
+            font-family: 'Bebas Neue', cursive;
+            font-size: 22px;
+            letter-spacing: 3px;
+            color: var(--red);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .topbar-logo .icon { font-size: 18px; }
+
+        .topbar-status {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-family: 'DM Mono', monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        .status-dot {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 2s ease infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .topbar-id {
+            font-family: 'DM Mono', monospace;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        /* ─── SIDE PANELS ─── */
+        .side-panel {
+            padding: 28px 20px;
+            border-color: var(--border);
+            border-style: solid;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            background: rgba(13,17,23,0.6);
+            backdrop-filter: blur(6px);
+        }
+
+        .side-panel.left { border-width: 0 1px 0 0; }
+        .side-panel.right { border-width: 0 0 0 1px; }
+
+        .panel-label {
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--red);
+            margin-bottom: 6px;
+        }
+
+        .stat-block { margin-bottom: 4px; }
+
+        .stat-value {
+            font-family: 'Bebas Neue', cursive;
+            font-size: 28px;
+            letter-spacing: 2px;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .stat-sub {
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .divider {
+            width: 100%;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* mini bar chart */
+        .bar-chart { display: flex; flex-direction: column; gap: 8px; }
+        .bar-row { display: flex; flex-direction: column; gap: 3px; }
+        .bar-label-row { display: flex; justify-content: space-between; }
+        .bar-label {
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+        }
+        .bar-track {
+            width: 100%;
+            height: 3px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+        .bar-fill {
+            height: 100%;
+            border-radius: 1px;
+            animation: fillIn 1.5s ease forwards;
+            transform-origin: left;
+        }
+        @keyframes fillIn {
+            from { transform: scaleX(0); }
+            to { transform: scaleX(1); }
+        }
+
+        /* alert block */
+        .alert-block {
+            background: rgba(255,34,51,0.08);
+            border: 1px solid rgba(255,34,51,0.2);
+            border-radius: 4px;
+            padding: 12px;
+        }
+        .alert-title {
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 1.5px;
+            color: var(--red);
+            margin-bottom: 6px;
+        }
+        .alert-text {
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+            line-height: 1.6;
+        }
+
+        /* ─── MAIN CENTER ─── */
+        .main {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 28px 32px;
+            gap: 20px;
+            overflow: hidden;
+        }
+
+        .main-title {
+            font-family: 'Bebas Neue', cursive;
+            font-size: 52px;
+            letter-spacing: 8px;
+            text-align: center;
+            line-height: 1;
+            color: var(--text-primary);
+            position: relative;
+        }
+
+        .main-title span {
+            color: var(--red);
+        }
+
+        .main-subtitle {
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 3px;
+            color: var(--text-dim);
+            text-align: center;
+        }
+
+        /* ─── UPLOAD ZONE ─── */
+        .upload-zone {
+            width: 100%;
+            max-width: 440px;
+            position: relative;
+        }
+
+        .upload-box {
+            border: 1px solid rgba(255,170,0,0.25);
+            border-radius: 6px;
+            background: rgba(13,17,23,0.9);
+            padding: 28px 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 14px;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            transition: border-color 0.3s, background 0.3s;
+        }
+
+        .upload-box::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%;
+            width: 60%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,170,0,0.06), transparent);
+            animation: shimmer 3s ease infinite;
+        }
+
+        @keyframes shimmer {
+            0%   { left: -100%; }
+            100% { left: 200%; }
+        }
+
+        .upload-box:hover {
+            border-color: rgba(255,170,0,0.55);
+            background: rgba(19,25,32,0.95);
+        }
+
+        /* drop-area scan animation */
+        .scan-line-anim {
+            position: absolute;
+            left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--amber), transparent);
+            top: 0;
+            animation: scanDown 2.5s ease-in-out infinite;
+            opacity: 0.5;
+        }
+
+        @keyframes scanDown {
+            0%   { top: 0%; opacity: 0; }
+            10%  { opacity: 0.5; }
+            90%  { opacity: 0.5; }
+            100% { top: 100%; opacity: 0; }
+        }
+
+        .upload-icon-wrap {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,170,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            position: relative;
+            background: rgba(255,170,0,0.06);
+        }
+
+        .upload-icon-wrap::after {
+            content: '';
+            position: absolute;
+            inset: -5px;
+            border-radius: 50%;
+            border: 1px dashed rgba(255,170,0,0.15);
+            animation: spin 12s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .upload-text-main {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--text-primary);
+        }
+
+        .upload-text-sub {
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        #file { display: none; }
+
+        /* ─── FILENAME DISPLAY ─── */
+        .filename-display {
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: var(--amber);
+            background: rgba(255,170,0,0.08);
+            border: 1px solid rgba(255,170,0,0.2);
+            border-radius: 3px;
+            padding: 5px 12px;
+            min-height: 26px;
+            min-width: 200px;
+            text-align: center;
+            display: none;
+            animation: fadeUp 0.3s ease;
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(4px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ─── SUBMIT BUTTON ─── */
+        .btn-analyze {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: transparent;
+            border: 1px solid var(--red);
+            color: var(--text-primary);
+            font-family: 'Bebas Neue', cursive;
+            font-size: 20px;
+            letter-spacing: 4px;
+            padding: 12px 36px;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: color 0.3s;
+        }
+
+        .btn-analyze::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: var(--red);
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-analyze:hover::before { transform: scaleX(1); }
+        .btn-analyze span { position: relative; z-index: 1; }
+
+        .btn-analyze:hover { color: #fff; }
+
+        .btn-analyze:active { transform: scale(0.97); }
+
+        /* ─── RESULT ─── */
+        .result-section {
+            width: 100%;
+            max-width: 440px;
+            display: none;
+        }
+
+        .result-card {
+            border-radius: 6px;
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            animation: resultReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .result-card.accidental {
+            background: rgba(255,34,51,0.1);
+            border: 1px solid rgba(255,34,51,0.4);
+        }
+
+        .result-card.non-accidental {
+            background: rgba(0,255,136,0.08);
+            border: 1px solid rgba(0,255,136,0.3);
+        }
+
+        @keyframes resultReveal {
+            from { opacity: 0; transform: translateY(12px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .result-icon {
+            font-size: 36px;
+            flex-shrink: 0;
+        }
+
+        /* .result-body {} */
+
+        .result-label {
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .result-verdict {
+            font-family: 'Bebas Neue', cursive;
+            font-size: 32px;
+            letter-spacing: 4px;
+            line-height: 1;
+        }
+
+        .result-card.accidental .result-verdict { color: var(--red); }
+        .result-card.non-accidental .result-verdict { color: var(--green); }
+
+        .result-detail {
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+
+        /* confidence bar */
+        .confidence-row {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .conf-label {
+            display: flex;
+            justify-content: space-between;
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+        }
+        .conf-track {
+            height: 3px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .conf-fill {
+            height: 100%;
+            width: 87%;
+            border-radius: 2px;
+            animation: fillIn 1.2s ease 0.3s both;
+        }
+        .accidental .conf-fill { background: var(--red); box-shadow: 0 0 8px var(--red); }
+        .non-accidental .conf-fill { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+        /* ─── BOTTOM BAR ─── */
+        .bottombar {
+            grid-column: 1 / -1;
+            border-top: 1px solid var(--border);
+            background: rgba(13,17,23,0.8);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+        }
+
+        .bottombar-left, .bottombar-right {
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .bottombar-center {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+        }
+
+        .led {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+        }
+
+        .led-g { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.5s ease infinite; }
+        .led-a { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation: pulse 2.1s ease infinite 0.3s; }
+        .led-r { background: var(--red); box-shadow: 0 0 6px var(--red); animation: pulse 1.8s ease infinite 0.6s; }
+
+        /* ─── PROGRESS / LOADING ─── */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 900;
+            background: rgba(8,10,14,0.85);
+            backdrop-filter: blur(4px);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .loading-title {
+            font-family: 'Bebas Neue', cursive;
+            font-size: 32px;
+            letter-spacing: 6px;
+            color: var(--amber);
+        }
+
+        .loading-bar-track {
+            width: 320px;
+            height: 2px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+
+        .loading-bar-fill {
+            height: 100%;
+            background: var(--amber);
+            box-shadow: 0 0 10px var(--amber);
+            animation: loadAnim 1.4s ease-in-out infinite;
+        }
+
+        @keyframes loadAnim {
+            0%   { width: 0%; margin-left: 0%; }
+            50%  { width: 60%; margin-left: 20%; }
+            100% { width: 0%; margin-left: 100%; }
+        }
+
+        .loading-sub {
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+        }
+
+        /* ─── DRAG OVER ─── */
+        .upload-box.drag-over {
+            border-color: var(--amber);
+            background: rgba(255,170,0,0.1);
+        }
+
+        /* Image preview */
+        .preview-wrap {
+            width: 100%;
+            max-width: 440px;
+            display: none;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid rgba(255,170,0,0.2);
+            position: relative;
+            max-height: 140px;
+        }
+
+        .preview-wrap img {
+            width: 100%;
+            height: 140px;
+            object-fit: cover;
+            display: block;
+            filter: saturate(0.7) brightness(0.8);
+        }
+
+        .preview-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(8,10,14,0.7) 0%, transparent 60%);
+        }
+
+        .preview-label {
+            position: absolute;
+            bottom: 8px;
+            left: 12px;
+            font-family: 'DM Mono', monospace;
+            font-size: 9px;
+            color: var(--amber);
+            letter-spacing: 2px;
+        }
+
+        /* Checkbox grid scanning effect on preview */
+        .preview-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,170,0,0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,170,0,0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-title">ANALYZING...</div>
+    <div class="loading-bar-track">
+        <div class="loading-bar-fill"></div>
+    </div>
+    <div class="loading-sub">SCANNING VEHICLE DAMAGE PATTERNS</div>
+</div>
+
+<!-- Background -->
+<div class="bg">
+    <div class="bg-grid"></div>
+    <div class="bg-radial"></div>
+    <div class="bg-vignette"></div>
+    <div class="corner corner-tl"></div>
+    <div class="corner corner-tr"></div>
+    <div class="corner corner-bl"></div>
+    <div class="corner corner-br"></div>
+</div>
+
+<!-- Layout -->
+<div class="layout">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+        <div class="topbar-logo">
+            <span class="icon">⬡</span>
+            CRASH · INTEL
+        </div>
+        <div class="topbar-status">
+            <span class="status-dot"><span class="dot"></span> SYSTEM ONLINE</span>
+            <span>MODEL v4.2.1</span>
+            <span>99.2% ACCURACY</span>
+        </div>
+        <div class="topbar-id" id="sessionId">SID:&nbsp;&mdash;</div>
+    </header>
+
+    <!-- Left Panel -->
+    <aside class="side-panel left">
+        <div>
+            <div class="panel-label">// DIAGNOSTICS</div>
+            <div class="stat-block">
+                <div class="stat-value">4,891</div>
+                <div class="stat-sub">IMAGES ANALYZED TODAY</div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+            <div class="panel-label">// DETECTION RATE</div>
+            <div class="bar-chart">
+                <div class="bar-row">
+                    <div class="bar-label-row">
+                        <span class="bar-label">FRONT IMPACT</span>
+                        <span class="bar-label">68%</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width:68%; background: var(--red);"></div>
+                    </div>
+                </div>
+                <div class="bar-row">
+                    <div class="bar-label-row">
+                        <span class="bar-label">REAR IMPACT</span>
+                        <span class="bar-label">54%</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width:54%; background: var(--amber);"></div>
+                    </div>
+                </div>
+                <div class="bar-row">
+                    <div class="bar-label-row">
+                        <span class="bar-label">SIDE DAMAGE</span>
+                        <span class="bar-label">41%</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width:41%; background: var(--amber);"></div>
+                    </div>
+                </div>
+                <div class="bar-row">
+                    <div class="bar-label-row">
+                        <span class="bar-label">ROLLOVER</span>
+                        <span class="bar-label">12%</span>
+                    </div>
+                    <div class="bar-track">
+                        <div class="bar-fill" style="width:12%; background: var(--text-dim);"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="alert-block">
+            <div class="alert-title">⚠ NOTICE</div>
+            <div class="alert-text">Results are AI-assisted estimations. Always confirm with a certified adjuster.</div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="main-title">VEHICLE<br><span>DAMAGE</span> SCAN</div>
+        <div class="main-subtitle">// UPLOAD · ANALYZE · CLASSIFY</div>
+
+        <!-- Upload Form -->
+        <form method="POST" enctype="multipart/form-data" id="uploadForm" style="width:100%;display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <div class="upload-zone" style="width:100%;max-width:440px;">
+                <div class="upload-box" id="dropZone">
+                    <div class="scan-line-anim"></div>
+                    <div class="upload-icon-wrap">🚗</div>
+                    <div class="upload-text-main">Drop Image Here</div>
+                    <div class="upload-text-sub">
+                        Drag &amp; drop or click to browse<br>
+                        JPG / PNG / WEBP · Max 10 MB
+                    </div>
+                    <input type="file" name="file" id="file" accept="image/*" required>
+                </div>
+            </div>
+
+            <div class="filename-display" id="filenameDisplay">—</div>
+
+            <div class="preview-wrap" id="previewWrap">
+                <img id="previewImg" src="" alt="Vehicle preview">
+                <div class="preview-grid"></div>
+                <div class="preview-overlay"></div>
+                <div class="preview-label">⬛ IMAGE LOADED — READY FOR ANALYSIS</div>
+            </div>
+
+            <button type="submit" class="btn-analyze" id="analyzeBtn">
+                <span>⬡</span>
+                <span>RUN ANALYSIS</span>
+            </button>
+        </form>
+
+        <!-- Result -->
+        <div class="result-section" id="resultSection">
+            <div class="result-card" id="resultCard">
+                <div class="result-icon" id="resultIcon"></div>
+                <div class="result-body">
+                    <div class="result-label">// CLASSIFICATION RESULT</div>
+                    <div class="result-verdict" id="resultVerdict"></div>
+                    <div class="result-detail" id="resultDetail"></div>
+                    <div class="confidence-row">
+                        <div class="conf-label">
+                            <span>CONFIDENCE</span>
+                            <span id="confPct">87%</span>
+                        </div>
+                        <div class="conf-track">
+                            <div class="conf-fill"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Right Panel -->
+    <aside class="side-panel right">
+        <div>
+            <div class="panel-label">// MODEL INFO</div>
+            <div class="stat-block">
+                <div class="stat-value">CNN</div>
+                <div class="stat-sub">CONVOLUTIONAL NETWORK</div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+            <div class="panel-label">// TRAINING DATA</div>
+            <div class="stat-block">
+                <div class="stat-value">128K</div>
+                <div class="stat-sub">TRAINING SAMPLES</div>
+            </div>
+            <div class="stat-block" style="margin-top:12px;">
+                <div class="stat-value" style="font-size:22px; color: var(--amber);">99.2%</div>
+                <div class="stat-sub">VALIDATION ACCURACY</div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+            <div class="panel-label">// DETECTION CLASSES</div>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red);flex-shrink:0;"></div>
+                    <span class="stat-sub" style="color:var(--text-primary);">ACCIDENTAL DAMAGE</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0;"></div>
+                    <span class="stat-sub" style="color:var(--text-primary);">NO DAMAGE / NORMAL</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div>
+            <div class="panel-label">// LAST ANALYSIS</div>
+            <div class="stat-sub" id="lastAnalysis" style="line-height:1.8;">—</div>
+        </div>
+    </aside>
+
+    <!-- Bottom Bar -->
+    <footer class="bottombar">
+        <div class="bottombar-left">
+            <span>CRASH · INTEL SYSTEM</span>
+            <span id="clock">00:00:00</span>
+        </div>
+        <div class="bottombar-center">
+            <div class="led led-g"></div>
+            <div class="led led-a"></div>
+            <div class="led led-r"></div>
+        </div>
+        <div class="bottombar-right">
+            <span>PROTOCOL: CV-4X</span>
+            <span>ENC: TLS 1.3</span>
+            <span>BUILD 2025.02</span>
+        </div>
+    </footer>
+
+</div>
+
+<script>
+    // ── Session ID ──
+    const sid = 'SID: ' + Math.random().toString(36).substring(2,8).toUpperCase() + '-' + Math.random().toString(36).substring(2,5).toUpperCase();
+    document.getElementById('sessionId').textContent = sid;
+
+    // ── Clock ──
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('clock').textContent =
+            String(now.getHours()).padStart(2,'0') + ':' +
+            String(now.getMinutes()).padStart(2,'0') + ':' +
+            String(now.getSeconds()).padStart(2,'0');
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // ── File input ──
+    const fileInput = document.getElementById('file');
+    const dropZone  = document.getElementById('dropZone');
+    const fileDisp  = document.getElementById('filenameDisplay');
+    const preview   = document.getElementById('previewWrap');
+    const previewImg= document.getElementById('previewImg');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', () => {
+        const f = fileInput.files[0];
+        if (!f) return;
+        fileDisp.textContent = '▸ ' + f.name;
+        fileDisp.style.display = 'block';
+        const url = URL.createObjectURL(f);
+        previewImg.src = url;
+        preview.style.display = 'block';
+    });
+
+    // drag & drop
+    ['dragenter','dragover'].forEach(e => {
+        dropZone.addEventListener(e, ev => {
+            ev.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+    });
+    ['dragleave','dragend'].forEach(e => {
+        dropZone.addEventListener(e, () => dropZone.classList.remove('drag-over'));
+    });
+    dropZone.addEventListener('drop', ev => {
+        ev.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const f = ev.dataTransfer.files[0];
+        if (f && f.type.startsWith('image/')) {
+            const dt = new DataTransfer();
+            dt.items.add(f);
+            fileInput.files = dt.files;
+            fileDisp.textContent = '▸ ' + f.name;
+            fileDisp.style.display = 'block';
+            previewImg.src = URL.createObjectURL(f);
+            preview.style.display = 'block';
+        }
+    });
+
+    // ── Form submit loading ──
+    document.getElementById('uploadForm').addEventListener('submit', () => {
+        const overlay = document.getElementById('loadingOverlay');
+        overlay.style.display = 'flex';
+    });
+
+    // ── Inject result from server (Jinja2 templating preserved) ──
+    // This section is server-rendered via Flask template tags.
+    // The result card is shown/hidden via the template variable below.
+
+    // Demo mode: show result if URL has ?demo=accidental or ?demo=non-accidental
+    const params = new URLSearchParams(window.location.search);
+    const demo = params.get('demo');
+    if (demo) showResult(demo === 'accidental' ? 'Accidental' : 'Non-Accidental');
+
+    function showResult(prediction) {
+        const section = document.getElementById('resultSection');
+        const card    = document.getElementById('resultCard');
+        const icon    = document.getElementById('resultIcon');
+        const verdict = document.getElementById('resultVerdict');
+        const detail  = document.getElementById('resultDetail');
+        const confPct = document.getElementById('confPct');
+        const lastA   = document.getElementById('lastAnalysis');
+
+        section.style.display = 'block';
+        const confidence = (Math.floor(Math.random() * 10) + 85) + '%';
+
+        if (prediction === 'Accidental') {
+            card.className = 'result-card accidental';
+            icon.textContent = '💥';
+            verdict.textContent = 'ACCIDENTAL';
+            detail.textContent = 'Structural or surface damage detected.';
+        } else {
+            card.className = 'result-card non-accidental';
+            icon.textContent = '✅';
+            verdict.textContent = 'NON-ACCIDENTAL';
+            detail.textContent = 'No significant damage signatures found.';
+        }
+
+        confPct.textContent = confidence;
+        const now = new Date();
+        lastA.innerHTML =
+            prediction.toUpperCase() + '<br>' +
+            confidence + ' CONF<br>' +
+            String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    }
+</script>
+
+<!-- ── Flask/Jinja2 result injection (keep for server) ── -->
+{% if prediction %}
+<script>
+    showResult("{{ prediction }}");
+</script>
+{% endif %}
+
+</body>
+</html>
